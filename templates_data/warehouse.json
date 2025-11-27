@@ -1,0 +1,20 @@
+{
+  "nodeDataArray": [
+    {"key": 1, "text": "MATERIAL RECEIPT", "loc": "0 0", "shape": "RoundedRectangle"},
+    {"key": 2, "text": "INCOMING MATERIAL INSPECTION", "loc": "0 100", "shape": "Diamond"},
+    {"key": 3, "text": "MRB", "loc": "200 100", "shape": "Diamond"},
+    {"key": 4, "text": "RTV", "loc": "400 100", "shape": "RoundedRectangle"},
+    {"key": 5, "text": "WARE HOUSE", "loc": "0 200", "shape": "RoundedRectangle"},
+    {"key": 6, "text": "KITTING", "loc": "0 300", "shape": "RoundedRectangle"},
+    {"key": 7, "text": "WIP FEEDER LOADING", "loc": "0 400", "shape": "RoundedRectangle"}
+  ],
+  "linkDataArray": [
+    {"from": 1, "to": 2},
+    {"from": 2, "to": 5, "text": "Pass"},
+    {"from": 2, "to": 3, "text": "Fail"},
+    {"from": 3, "to": 4, "text": "Fail"},
+    {"from": 3, "to": 5, "text": "Pass"},
+    {"from": 5, "to": 6},
+    {"from": 6, "to": 7}
+  ]
+}

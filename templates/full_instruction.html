@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Generate Mode - Flowchart Creator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/gojs/release/go.js"></script>
+  <style>
+    body, html { height: 100%; margin: 0; }
+    #myDiagramDiv {
+      width: 100%;
+      height: calc(100vh - 130px);
+      background: white;
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 p-6">
+  <div class="max-w-5xl mx-auto space-y-4">
+    <h1 class="text-3xl font-bold text-gray-800 mb-2">Generate Flowchart</h1>
+    <div class="flex gap-2">
+      <input id="promptInput" type="text" placeholder="Enter your prompt to generate a flowchart..."
+             class="flex-1 border rounded px-3 py-2">
+      <button id="micBtn" class="bg-red-500 text-white px-3 py-2 rounded">🎤</button>
+      <button id="generateBtn" class="bg-indigo-600 text-white px-4 py-2 rounded">Generate</button>
+      <button id="saveBtn" class="bg-blue-600 text-white px-4 py-2 rounded">Save</button>
+      <button id="imgBtn" class="bg-purple-600 text-white px-4 py-2 rounded">Save as PNG</button>
+    </div>
+    <div id="myDiagramDiv"></div>
+  </div>
+
+  <script>
+    const $ = go.GraphObject.make;
+    let sessionIdGlobal = null;
+
+    // -------------------- Diagram Setup --------------------
+    const diagram = $(go.Diagram, "myDiagramDiv", {
+      "undoManager.isEnabled": true,
+      layout: $(go.LayeredDigraphLayout, { direction: 90, layerSpacing: 80, columnSpacing: 60 }),
+      "linkingTool.isEnabled": true,
+      "relinkingTool.isEnabled": true
+    });
+
+    // Ports for linking
+    function makePort(name, spot) {
+      return $(go.Shape, "Circle", {
+        fill: "transparent", stroke: null, desiredSize: new go.Size(10, 10),
+        alignment: spot, alignmentFocus: spot,
+        portId: name, fromLinkable: true, toLinkable: true,
+        fromSpot: spot, toSpot: spot
+      });
+    }
+
+    // 🧱 Context Menu Functions
+    function changeShape(e, obj, newShape) {
+      const node = obj.part.adornedPart;
+      if (node) {
+        e.diagram.startTransaction("change shape");
+        node.data.shape = newShape;
+        e.diagram.model.updateTargetBindings(node.data);
+        e.diagram.commitTransaction("change shape");
+      }
+    }
+
+    function deleteNode(e, obj) {
+      const node = obj.part.adornedPart;
+      if (node) {
+        e.diagram.startTransaction("delete node");
+        e.diagram.remove(node);
+        e.diagram.commitTransaction("delete node");
+      }
+    }
+
+    function duplicateNode(e, obj) {
+      const node = obj.part.adornedPart;
+      if (!node) return;
+      const diagram = e.diagram;
+      diagram.startTransaction("duplicate node");
+      const copy = Object.assign({}, node.data);
+      copy.key = diagram.model.nodeDataArray.length + 1;
+      const oldLoc = go.Point.parse(node.data.loc);
+      copy.loc = `${oldLoc.x + 50} ${oldLoc.y + 50}`;
+      diagram.model.addNodeData(copy);
+      diagram.commitTransaction("duplicate node");
+    }
+
+    // -------------------- Node Template --------------------
+    diagram.nodeTemplate =
+      $(go.Node, "Spot",
+        {
+          locationSpot: go.Spot.Center,
+          mouseEnter: (e, n) => n.ports.each(p => p.fill = "lightgray"),
+          mouseLeave: (e, n) => n.ports.each(p => p.fill = "transparent")
+        },
+        new go.Binding("location", "loc", go.Point.parse).makeTwoWay(go.Point.stringify),
+
+        $(go.Panel, "Auto",
+          $(go.Shape,
+            { fill: "white", stroke: "black" },
+            new go.Binding("figure", "shape").makeTwoWay(),
+            new go.Binding("parameter1", "", d => d.shape === "Parallelogram" ? 20 : undefined),
+            new go.Binding("fill", "shape", s => {
+              switch (s) {
+                case "Diamond": return "#fde68a";
+                case "Parallelogram": return "#bfdbfe";
+                case "Ellipse": return "#fca5a5";
+                default: return "#dcfce7";
+              }
+            })
+          ),
+          $(go.TextBlock, { margin: 8, editable: true },
+            new go.Binding("text").makeTwoWay())
+        ),
+
+        // ✅ Context Menu: Shape + Delete + Duplicate
+        {
+          contextMenu:
+            $("ContextMenu",
+              $("ContextMenuButton", $(go.TextBlock, "RoundedRectangle"),
+                { click: (e, obj) => changeShape(e, obj, "RoundedRectangle") }),
+              $("ContextMenuButton", $(go.TextBlock, "Ellipse"),
+                { click: (e, obj) => changeShape(e, obj, "Ellipse") }),
+              $("ContextMenuButton", $(go.TextBlock, "Diamond"),
+                { click: (e, obj) => changeShape(e, obj, "Diamond") }),
+              $("ContextMenuButton", $(go.TextBlock, "Parallelogram"),
+                { click: (e, obj) => changeShape(e, obj, "Parallelogram") }),
+              $("ContextMenuButton", $(go.TextBlock, "📄 Duplicate Node"),
+                { click: duplicateNode }),
+              $("ContextMenuButton", $(go.TextBlock, "🗑️ Delete Node"),
+                { click: deleteNode })
+            )
+        },
+
+        makePort("T", go.Spot.Top),
+        makePort("L", go.Spot.Left),
+        makePort("R", go.Spot.Right),
+        makePort("B", go.Spot.Bottom)
+      );
+
+    // -------------------- Link Template --------------------
+    diagram.linkTemplate =
+      $(go.Link,
+        { routing: go.Link.AvoidsNodes, curve: go.Link.JumpOver, corner: 5 },
+        $(go.Shape),
+        $(go.Shape, { toArrow: "Standard" }),
+        $(go.TextBlock, { background: "white", margin: 2, editable: true },
+          new go.Binding("text").makeTwoWay())
+      );
+
+    // -------------------- Voice Input --------------------
+    const micBtn = document.getElementById("micBtn");
+    const input = document.getElementById("promptInput");
+    let recognition; let listening = false;
+
+    if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+      recognition.lang = "en-US"; recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        listening = true;
+        micBtn.textContent = "🛑";
+        micBtn.classList.replace("bg-red-500", "bg-gray-500");
+      };
+      recognition.onend = () => {
+        listening = false;
+        micBtn.textContent = "🎤";
+        micBtn.classList.replace("bg-gray-500", "bg-red-500");
+      };
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        input.value = transcript.trim();
+      };
+      micBtn.onclick = () => (listening ? recognition.stop() : recognition.start());
+    } else {
+      micBtn.disabled = true;
+      micBtn.textContent = "🎤 (Not supported)";
+    }
+
+    // -------------------- Generate --------------------
+    document.getElementById("generateBtn").onclick = async () => {
+      const prompt = input.value.trim();
+      if (!prompt) return alert("Please enter a prompt");
+      const res = await fetch("/flowchart/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt })
+      });
+      const data = await res.json();
+      if (data.json) {
+        sessionIdGlobal = data.session_id;
+        diagram.model = new go.GraphLinksModel(data.json.nodeDataArray, data.json.linkDataArray);
+        localStorage.setItem("lastSessionId", sessionIdGlobal);
+      } else {
+        alert("Error generating flowchart.");
+      }
+    };
+
+    // -------------------- Save --------------------
+    document.getElementById("saveBtn").onclick = async () => {
+      if (!sessionIdGlobal) return alert("No flowchart generated yet.");
+      const modelJson = diagram.model.toJson();
+      await fetch("/flowchart/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionIdGlobal, json: JSON.parse(modelJson) })
+      });
+      alert("Flowchart saved!");
+    };
+
+    // ✅ -------------------- Full Diagram Image Export --------------------
+    document.getElementById("imgBtn").onclick = async () => {
+      if (!sessionIdGlobal) return alert("No flowchart generated yet.");
+      const bounds = diagram.documentBounds; // get full content bounds
+      const pngData = diagram.makeImageData({
+        background: "white",
+        scale: 1, // 1 = 100% size; 2 = HD
+        position: bounds.position,
+        size: bounds.size
+      });
+      const a = document.createElement("a");
+      a.href = pngData;
+      a.download = "flowchart.png";
+      a.click();
+
+      // Also save JSON
+      const modelJson = diagram.model.toJson();
+      await fetch("/flowchart/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionIdGlobal, json: JSON.parse(modelJson) })
+      });
+    };
+  </script>
+</body>
+</html>

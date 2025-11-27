@@ -1,0 +1,33 @@
+{
+  "nodeDataArray": [
+    {"key": 1, "text": "LABEL PASTING BOTTOM SIDE", "loc": "0 0", "shape": "RoundedRectangle"},
+    {"key": 2, "text": "LOAD BOTTOM SIDE IN BARE BOTTOM LOADER", "loc": "0 100", "shape": "RoundedRectangle"},
+    {"key": 3, "text": "BOTTOM SIDE SOLDER PASTE PRINTING", "loc": "0 200", "shape": "RoundedRectangle"},
+    {"key": 4, "text": "SPI INSPECTION", "loc": "0 300", "shape": "Diamond"},
+    {"key": 5, "text": "CLEAN THE MISPRINT BOARD", "loc": "200 200", "shape": "RoundedRectangle"},
+    {"key": 6, "text": "AQUEOUS CLEANING (DI WATER)", "loc": "400 200", "shape": "RoundedRectangle"},
+    {"key": 7, "text": "SMD COMPONENT PLACEMENT BY MACHINE", "loc": "0 400", "shape": "RoundedRectangle"},
+    {"key": 8, "text": "REFLOW (BOTTOM)", "loc": "0 500", "shape": "RoundedRectangle"},
+    {"key": 9, "text": "AOI", "loc": "0 600", "shape": "Diamond"},
+    {"key": 10, "text": "AQUEOUS CLEANING (DI WATER)", "loc": "200 600", "shape": "RoundedRectangle"},
+    {"key": 11, "text": "REWORK", "loc": "400 600", "shape": "RoundedRectangle"},
+    {"key": 12, "text": "FQA", "loc": "0 700", "shape": "Diamond"},
+    {"key": 13, "text": "N", "loc": "0 800", "shape": "Ellipse"}
+  ],
+  "linkDataArray": [
+    {"from": 1, "to": 2},
+    {"from": 2, "to": 3},
+    {"from": 3, "to": 4},
+    {"from": 4, "to": 5, "text": "Fail"},
+    {"from": 5, "to": 6},
+    {"from": 4, "to": 7, "text": "Pass"},
+    {"from": 7, "to": 8},
+    {"from": 8, "to": 9},
+    {"from": 9, "to": 12, "text": "Pass"},
+    {"from": 9, "to": 10, "text": "Fail"},
+    {"from": 10, "to": 11},
+    {"from": 11, "to": 7},
+    {"from": 12, "to": 13, "text": "Pass"},
+    {"from": 12, "to": 10, "text": "Fail"}
+  ]
+}

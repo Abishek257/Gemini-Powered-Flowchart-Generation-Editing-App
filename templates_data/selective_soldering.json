@@ -1,0 +1,27 @@
+{
+    "nodeDataArray": [
+        { "key": 1, "text": "STUFFING", "loc": "0 0", "shape": "RoundedRectangle" },
+        { "key": 2, "text": "SELECTIVE SOLDERING", "loc": "0 100", "shape": "RoundedRectangle" },
+        { "key": 3, "text": "TOUCHUP / MANUAL SOLDERING (OPTIONAL)", "loc": "0 200", "shape": "RoundedRectangle" },
+        { "key": 4, "text": "X-RAY", "loc": "0 300", "shape": "Diamond" },
+        { "key": 5, "text": "ION CONTAMINATION TEST", "loc": "0 400", "shape": "RoundedRectangle" },
+        { "key": 6, "text": "AQUEOUS CLEANING", "loc": "0 500", "shape": "RoundedRectangle" },
+        { "key": 7, "text": "ADDITIONAL LABEL PASTING", "loc": "0 600", "shape": "RoundedRectangle" },
+        { "key": 8, "text": "Visual Inspection", "loc": "0 700", "shape": "Diamond" },
+        { "key": 9, "text": "N", "loc": "-100 800", "shape": "Ellipse" },
+        { "key": 10, "text": "REWORK", "loc": "200 350", "shape": "RoundedRectangle" }
+    ],
+    "linkDataArray": [
+        { "from": 1, "to": 2 },
+        { "from": 2, "to": 3 },
+        { "from": 3, "to": 4 },
+        { "from": 4, "to": 5, "text": "Pass" },
+        { "from": 4, "to": 10, "text": "Fail" },
+        { "from": 10, "to": 2 },
+        { "from": 5, "to": 6 },
+        { "from": 6, "to": 7 },
+        { "from": 7, "to": 8 },
+        { "from": 8, "to": 9, "text": "Pass" },
+        { "from": 8, "to": 10, "text": "Fail" }
+    ]
+}

@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chat Mode - Flowchart Editor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/gojs/release/go.js"></script>
+  <style>
+    body, html { height: 100%; margin: 0; }
+    #container { display: flex; height: 100%; }
+    #sidebar {
+      width: 250px;
+      min-width: 180px;
+      max-width: 400px;
+      background: #f9fafb;
+      border-right: 1px solid #ddd;
+      overflow-y: auto;
+      padding: 0.5rem;
+    }
+    #resizer { width: 5px; cursor: col-resize; background: #ddd; }
+    #main {
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 1rem;
+      background: #f3f4f6;
+    }
+    #myDiagramDiv {
+      flex-grow: 1;
+      border: 1px solid #ccc;
+      background: white;
+    }
+    #micIndicator {
+      pointer-events: none;
+      background-color: rgba(239, 68, 68, 0.15);
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <!-- Sidebar -->
+    <div id="sidebar">
+      <div class="flex justify-between items-center mb-2">
+        <h2 class="font-semibold text-gray-700">History</h2>
+        <button id="refreshHistory" class="text-xs bg-gray-700 text-white px-2 py-1 rounded">↻</button>
+      </div>
+      <div id="historyList" class="space-y-2 text-sm text-gray-700"></div>
+    </div>
+
+    <div id="resizer"></div>
+
+    <!-- Main -->
+    <div id="main">
+      <div class="flex gap-2 mb-2">
+        <select id="templateSelect" class="border rounded px-2 py-1 text-sm">
+          <option value="">-- Select Template --</option>
+        </select>
+        <button id="loadTemplateBtn" class="bg-indigo-600 text-white px-3 py-1 rounded text-sm">Load Template</button>
+      </div>
+
+      <div class="flex gap-2 mb-2 items-center relative">
+        <input id="instructionInput" type="text" placeholder="Enter or speak your instruction..."
+               class="flex-1 border rounded px-3 py-2">
+        <div class="relative">
+          <button id="micBtn" class="bg-red-500 text-white px-3 py-2 rounded" title="Voice Input 🎤">🎤</button>
+          <div id="micIndicator" class="hidden absolute inset-0 rounded-full border-4 border-red-400 animate-ping"></div>
+        </div>
+        <button id="modifyBtn" class="bg-green-600 text-white px-4 py-2 rounded">Apply</button>
+        <button id="saveBtn" class="bg-blue-600 text-white px-4 py-2 rounded">Save</button>
+        <button id="imgBtn" class="bg-purple-600 text-white px-4 py-2 rounded">Save as PNG</button>
+      </div>
+
+      <div id="myDiagramDiv"></div>
+    </div>
+  </div>
+
+  <script>
+    const $ = go.GraphObject.make;
+    let sessionIdGlobal = null;
+
+    // -------------------- Diagram Setup --------------------
+    const diagram = $(go.Diagram, "myDiagramDiv", {
+      "undoManager.isEnabled": true,
+      "linkingTool.isEnabled": true,
+      "relinkingTool.isEnabled": true,
+      layout: $(go.LayeredDigraphLayout, { direction: 90, layerSpacing: 80, columnSpacing: 60 })
+    });
+
+    // Ports for linking
+    function makePort(name, spot) {
+      return $(go.Shape, "Circle", {
+        fill: "transparent", stroke: null, desiredSize: new go.Size(10, 10),
+        alignment: spot, alignmentFocus: spot,
+        portId: name, fromLinkable: true, toLinkable: true,
+        fromSpot: spot, toSpot: spot
+      });
+    }
+
+    // Node actions
+    function changeShape(e, obj, newShape) {
+      const node = obj.part.adornedPart;
+      if (node) {
+        e.diagram.startTransaction("change shape");
+        node.data.shape = newShape;
+        e.diagram.model.updateTargetBindings(node.data);
+        e.diagram.commitTransaction("change shape");
+      }
+    }
+
+    function deleteNode(e, obj) {
+      const node = obj.part.adornedPart;
+      if (node) {
+        e.diagram.startTransaction("delete node");
+        e.diagram.remove(node);
+        e.diagram.commitTransaction("delete node");
+      }
+    }
+
+    function duplicateNode(e, obj) {
+      const node = obj.part.adornedPart;
+      if (!node) return;
+      const diagram = e.diagram;
+      diagram.startTransaction("duplicate node");
+      const copy = Object.assign({}, node.data);
+      copy.key = diagram.model.nodeDataArray.length + 1;
+      const oldLoc = go.Point.parse(node.data.loc);
+      copy.loc = `${oldLoc.x + 50} ${oldLoc.y + 50}`;
+      diagram.model.addNodeData(copy);
+      diagram.commitTransaction("duplicate node");
+    }
+
+    // -------------------- Node Template --------------------
+    diagram.nodeTemplate =
+      $(go.Node, "Spot",
+        {
+          locationSpot: go.Spot.Center,
+          mouseEnter: (e, n) => n.ports.each(p => p.fill = "lightgray"),
+          mouseLeave: (e, n) => n.ports.each(p => p.fill = "transparent")
+        },
+        new go.Binding("location", "loc", go.Point.parse).makeTwoWay(go.Point.stringify),
+
+        $(go.Panel, "Auto",
+          $(go.Shape,
+            { fill: "white", stroke: "black" },
+            new go.Binding("figure", "shape").makeTwoWay(),
+            new go.Binding("parameter1", "", d => d.shape === "Parallelogram" ? 20 : undefined),
+            new go.Binding("fill", "shape", s => {
+              switch (s) {
+                case "Diamond": return "#fde68a";
+                case "Parallelogram": return "#bfdbfe";
+                case "Ellipse": return "#fca5a5";
+                default: return "#dcfce7";
+              }
+            })
+          ),
+          $(go.TextBlock, { margin: 8, editable: true },
+            new go.Binding("text").makeTwoWay()
+          )
+        ),
+
+        // Context menu
+        {
+          contextMenu:
+            $("ContextMenu",
+              $("ContextMenuButton", $(go.TextBlock, "RoundedRectangle"),
+                { click: (e, obj) => changeShape(e, obj, "RoundedRectangle") }),
+              $("ContextMenuButton", $(go.TextBlock, "Ellipse"),
+                { click: (e, obj) => changeShape(e, obj, "Ellipse") }),
+              $("ContextMenuButton", $(go.TextBlock, "Diamond"),
+                { click: (e, obj) => changeShape(e, obj, "Diamond") }),
+              $("ContextMenuButton", $(go.TextBlock, "Parallelogram"),
+                { click: (e, obj) => changeShape(e, obj, "Parallelogram") }),
+              $("ContextMenuButton", $(go.TextBlock, "📄 Duplicate Node"),
+                { click: duplicateNode }),
+              $("ContextMenuButton", $(go.TextBlock, "🗑️ Delete Node"),
+                { click: deleteNode })
+            )
+        },
+
+        makePort("T", go.Spot.Top),
+        makePort("L", go.Spot.Left),
+        makePort("R", go.Spot.Right),
+        makePort("B", go.Spot.Bottom)
+      );
+
+    // -------------------- Link Template --------------------
+    diagram.linkTemplate =
+      $(go.Link,
+        { routing: go.Link.AvoidsNodes, curve: go.Link.JumpOver, corner: 5 },
+        $(go.Shape),
+        $(go.Shape, { toArrow: "Standard" }),
+        $(go.TextBlock, { background: "white", margin: 2, editable: true }, new go.Binding("text").makeTwoWay())
+      );
+
+    // -------------------- Template Loader --------------------
+    async function populateTemplates() {
+      const res = await fetch("/templates/list");
+      const data = await res.json();
+      const templates = data.templates || [];
+      const select = document.getElementById("templateSelect");
+      select.innerHTML = '<option value="">-- Select Template --</option>';
+      if (templates.length === 0) {
+        const opt = document.createElement("option");
+        opt.textContent = "No templates available for your role";
+        opt.disabled = true;
+        select.appendChild(opt);
+      } else {
+        templates.forEach(t => {
+          const opt = document.createElement("option");
+          opt.value = t;
+          opt.textContent = t;
+          select.appendChild(opt);
+        });
+      }
+    }
+
+    document.getElementById("loadTemplateBtn").onclick = async () => {
+      const name = document.getElementById("templateSelect").value;
+      if (!name) return alert("Please select a template");
+      const res = await fetch(`/templates/load/${encodeURIComponent(name)}`);
+      const data = await res.json();
+      if (data.json) {
+        sessionIdGlobal = data.session_id;
+        diagram.model = new go.GraphLinksModel(data.json.nodeDataArray, data.json.linkDataArray);
+        localStorage.setItem("lastSessionId", sessionIdGlobal);
+      } else alert("Error loading template.");
+    };
+
+    // -------------------- History --------------------
+    async function loadFlowchartFromHistory(sessionId) {
+      const res = await fetch("/flowchart/load", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId })
+      });
+      const data = await res.json();
+      if (data.json) {
+        sessionIdGlobal = sessionId;
+        diagram.model = new go.GraphLinksModel(data.json.nodeDataArray, data.json.linkDataArray);
+        localStorage.setItem("lastSessionId", sessionId);
+      }
+    }
+
+    async function loadHistoryList() {
+      const res = await fetch("/history/list");
+      const data = await res.json();
+      const root = document.getElementById("historyList");
+      root.innerHTML = "";
+      const days = data.days || {};
+      const keys = Object.keys(days).sort((a, b) => b.localeCompare(a));
+      if (!keys.length) {
+        root.innerHTML = '<p class="text-gray-500">No saved flowcharts yet.</p>';
+        return;
+      }
+      for (const day of keys) {
+        const dayDiv = document.createElement("div");
+        dayDiv.innerHTML = `<div class="font-medium mt-2">${day}</div>`;
+        for (const item of days[day]) {
+          const btn = document.createElement("button");
+          btn.className = "block w-full text-left px-2 py-1 rounded hover:bg-gray-200";
+          btn.innerText = `${item.title} (${item.session_id})`;
+          btn.onclick = () => loadFlowchartFromHistory(item.session_id);
+          dayDiv.appendChild(btn);
+        }
+        root.appendChild(dayDiv);
+      }
+    }
+    document.getElementById("refreshHistory").onclick = loadHistoryList;
+
+    // -------------------- Modify / Save --------------------
+    async function modifyFlowchart() {
+      const instruction = document.getElementById("instructionInput").value.trim();
+      if (!instruction) return alert("Please enter an instruction");
+      if (!sessionIdGlobal) return alert("No flowchart loaded.");
+      const res = await fetch("/flowchart/modify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionIdGlobal, instruction })
+      });
+      const data = await res.json();
+      if (data.json)
+        diagram.model = new go.GraphLinksModel(data.json.nodeDataArray, data.json.linkDataArray);
+    }
+
+    async function saveFlowchart() {
+      if (!sessionIdGlobal) return alert("No flowchart loaded.");
+      const modelJson = diagram.model.toJson();
+      await fetch("/flowchart/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionIdGlobal, json: JSON.parse(modelJson) })
+      });
+      alert("Flowchart saved!");
+    }
+
+    // ✅ Full diagram image export
+    async function saveAsImage() {
+      if (!sessionIdGlobal) return alert("No flowchart loaded.");
+      const bounds = diagram.documentBounds; // full diagram area
+      const pngData = diagram.makeImageData({
+        background: "white",
+        scale: 1,
+        position: bounds.position,
+        size: bounds.size
+      });
+      const a = document.createElement("a");
+      a.href = pngData;
+      a.download = "flowchart.png";
+      a.click();
+
+      // auto-save JSON
+      const modelJson = diagram.model.toJson();
+      await fetch("/flowchart/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionIdGlobal, json: JSON.parse(modelJson) })
+      });
+    }
+
+    document.getElementById("modifyBtn").onclick = modifyFlowchart;
+    document.getElementById("saveBtn").onclick = saveFlowchart;
+    document.getElementById("imgBtn").onclick = saveAsImage;
+
+    // -------------------- Voice Input --------------------
+    const micBtn = document.getElementById("micBtn");
+    const micIndicator = document.getElementById("micIndicator");
+    const input = document.getElementById("instructionInput");
+    let recognition; let listening = false;
+
+    if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+      recognition.lang = "en-US"; recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        listening = true;
+        micBtn.textContent = "🛑";
+        micBtn.classList.replace("bg-red-500", "bg-gray-500");
+        micIndicator.classList.remove("hidden");
+      };
+      recognition.onend = () => {
+        listening = false;
+        micBtn.textContent = "🎤";
+        micBtn.classList.replace("bg-gray-500", "bg-red-500");
+        micIndicator.classList.add("hidden");
+      };
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        input.value = transcript.trim();
+      };
+      micBtn.onclick = () => (listening ? recognition.stop() : recognition.start());
+    } else {
+      micBtn.disabled = true;
+      micBtn.textContent = "🎤 (Not supported)";
+    }
+
+    // -------------------- Init --------------------
+    window.addEventListener("DOMContentLoaded", () => {
+      populateTemplates();
+      loadHistoryList();
+      const last = localStorage.getItem("lastSessionId");
+      if (last) loadFlowchartFromHistory(last);
+    });
+
+    // -------------------- Sidebar Resizer --------------------
+    const resizer = document.getElementById("resizer");
+    const sidebar = document.getElementById("sidebar");
+    resizer.addEventListener("mousedown", (e) => {
+      document.onmousemove = (e) => {
+        const newWidth = e.clientX;
+        if (newWidth > 180 && newWidth < 400) sidebar.style.width = newWidth + "px";
+      };
+      document.onmouseup = () => { document.onmousemove = null; };
+    });
+  </script>
+</body>
+</html>
